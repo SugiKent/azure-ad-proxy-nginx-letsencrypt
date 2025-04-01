@@ -1,0 +1,83 @@
+# 認証スキップ判定用のマップ
+map $request_uri $skip_auth {
+    default 0;
+    
+    # 環境変数に設定された複数のパスをループで評価
+    "~^${AUTH_SKIP_PATHS}($|/.*)" 1;
+}
+
+server {
+    listen 80;
+    server_name ${NGINX_HOST};
+    
+    # Let's Encrypt用のチャレンジ対応
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    
+    # HTTPSへリダイレクト
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${NGINX_HOST};
+    
+    # SSL証明書の設定
+    ssl_certificate /etc/letsencrypt/live/${NGINX_HOST}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${NGINX_HOST}/privkey.pem;
+    
+    # SSLの最適化設定
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_dhparam /etc/nginx/dhparam/dhparam.pem;
+    
+    # HTTPSヘッダー設定
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    
+    # OAuth2 Proxyへのパス
+    location /oauth2/ {
+        proxy_pass http://oauth2-proxy:4180;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffer_size 4k;
+        proxy_buffers 4 32k;
+        proxy_busy_buffers_size 64k;
+    }
+
+    # アプリケーションへのプロキシ
+    location / {
+        # 指定パスの場合は認証をスキップ、それ以外は認証を要求
+        if ($skip_auth = 0) {
+            auth_request /oauth2/auth;
+            auth_request_set $user $upstream_http_x_auth_request_user;
+            auth_request_set $email $upstream_http_x_auth_request_email;
+            auth_request_set $token $upstream_http_x_auth_request_access_token;
+            
+            # 認証失敗時のリダイレクト
+            error_page 401 = /oauth2/sign_in;
+        }
+
+        # バックエンドアプリケーションへのプロキシ
+        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 認証情報をバックエンドに転送（認証済みの場合のみ）
+        if ($skip_auth = 0) {
+            proxy_set_header X-User $user;
+            proxy_set_header X-Email $email;
+            proxy_set_header Authorization "Bearer $token";
+        }
+    }
+}

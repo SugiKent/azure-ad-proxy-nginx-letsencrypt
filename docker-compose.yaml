@@ -1,0 +1,77 @@
+version: '3'
+
+services:
+  # OAuth2 Proxy
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    container_name: oauth2-proxy
+    restart: always
+    environment:
+      # Azure AD設定
+      - OAUTH2_PROXY_PROVIDER=azure
+      - OAUTH2_PROXY_CLIENT_ID=${CLIENT_ID}
+      - OAUTH2_PROXY_CLIENT_SECRET=${CLIENT_SECRET}
+      - OAUTH2_PROXY_AZURE_TENANT=${AZURE_TENANT}
+      
+      # OAuth2 Proxy基本設定
+      - OAUTH2_PROXY_COOKIE_SECRET=${COOKIE_SECRET}
+      - OAUTH2_PROXY_COOKIE_DOMAIN=${DOMAIN}
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_REDIRECT_URL=https://${DOMAIN}/oauth2/callback
+      
+      # 認証設定
+      - OAUTH2_PROXY_EMAIL_DOMAINS=*
+      - OAUTH2_PROXY_SCOPE=openid profile email
+      
+      # Nginxとの連携設定
+      - OAUTH2_PROXY_REVERSE_PROXY=true
+      - OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER=true
+      - OAUTH2_PROXY_PASS_USER_HEADERS=true
+      - OAUTH2_PROXY_SET_AUTHORIZATION_HEADER=true
+      - OAUTH2_PROXY_SET_XAUTHREQUEST=true
+      - OAUTH2_PROXY_UPSTREAM=http://${BACKEND_HOST}:${BACKEND_PORT}
+    networks:
+      - auth-network
+
+  # Nginx - リバースプロキシ
+  nginx:
+    image: nginx:latest
+    container_name: auth-nginx
+    restart: always
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates
+      - ./nginx/dhparam:/etc/nginx/dhparam
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    environment:
+      - NGINX_HOST=${DOMAIN}
+      - BACKEND_HOST=${BACKEND_HOST}
+      - BACKEND_PORT=${BACKEND_PORT}
+      - AUTH_SKIP_PATHS=${AUTH_SKIP_PATHS}
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    depends_on:
+      - oauth2-proxy
+    networks:
+      - auth-network
+      - ${BACKEND_NETWORK:-backend}
+
+  # Certbot - SSL証明書の取得・更新
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+    networks:
+      - auth-network
+
+networks:
+  auth-network:
+    driver: bridge
+  backend:
+    external: ${USE_EXTERNAL_NETWORK:-true}
