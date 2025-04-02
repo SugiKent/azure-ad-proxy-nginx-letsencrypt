@@ -26,7 +26,12 @@ git clone https://github.com/SugiKent/azure-ad-proxy-nginx-letsencrypt.git
 cd azure-ad-proxy-nginx-letsencrypt
 ```
 
-2. Generate DH parameters (if not already present):
+2. Copy .env.example
+```bash
+cp .env.example .env
+``` 
+
+3.. Generate DH parameters (if not already present):
 ```bash
 openssl dhparam -out nginx/dhparam/dhparam.pem 2048
 ```
