@@ -105,3 +105,36 @@ Edit `nginx/templates/default.conf.template` for:
 
 ## License
 MIT
+
+## Azure AD Application Registration
+
+### 1. Register the Application
+
+1. Access the [Azure portal](https://portal.azure.com/).
+2. Navigate to **Azure Active Directory** > **App registrations** > **New registration**.
+3. Enter a name for your application.
+4. Select the supported account types.
+5. In the **Redirect URI** section, create a new web platform entry (e.g., `https://your-domain.com/oauth2/callback`).
+
+### 2. Configure API Permissions
+
+1. Go to the **API Permissions** page and click **Add a permission**.
+2. Select **Microsoft Graph** > **Application permissions** > **Group** > **Group.Read.All**.
+3. Click **Add permissions** and, if necessary, grant admin consent.
+
+### 3. Create a Client Secret
+
+1. Go to the **Certificates & secrets** page and add a new client secret.
+2. Note down the value of the client secret.
+
+### 4. Configure Endpoints as Needed
+
+1. If using the v2.0 endpoint, set `"accessTokenAcceptedVersion": 2` in the **Manifest** page.
+
+## Obtaining Azure AD Settings Values
+
+To obtain the values for `CLIENT_ID`, `CLIENT_SECRET`, and `AZURE_TENANT`, follow these steps:
+
+1. **CLIENT_ID**: This is the Application (client) ID found on the application's **Overview** page in the Azure portal.
+2. **CLIENT_SECRET**: This is the value of the client secret you created in the **Certificates & secrets** page.
+3. **AZURE_TENANT**: This is the Directory (tenant) ID found on the application's **Overview** page in the Azure portal.

@@ -75,3 +75,20 @@ networks:
     driver: bridge
   backend:
     external: ${USE_EXTERNAL_NETWORK:-true}
+
+# Documentation on how to set up the Azure AD application and permissions
+# 1. Register the Application
+#    - Access the Azure portal (https://portal.azure.com/)
+#    - Navigate to Azure Active Directory > App registrations > New registration
+#    - Enter a name for your application
+#    - Select the supported account types
+#    - In the Redirect URI section, create a new web platform entry (e.g., https://your-domain.com/oauth2/callback)
+# 2. Configure API Permissions
+#    - Go to the API Permissions page and click Add a permission
+#    - Select Microsoft Graph > Application permissions > Group > Group.Read.All
+#    - Click Add permissions and, if necessary, grant admin consent
+# 3. Create a Client Secret
+#    - Go to the Certificates & secrets page and add a new client secret
+#    - Note down the value of the client secret
+# 4. Configure Endpoints as Needed
+#    - If using the v2.0 endpoint, set "accessTokenAcceptedVersion": 2 in the Manifest page
