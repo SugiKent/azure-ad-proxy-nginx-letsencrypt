@@ -27,7 +27,7 @@ docker compose up -d nginx
 # Obtain Let's Encrypt certificate
 docker compose run --rm certbot certonly --webroot \
   --webroot-path=/var/www/certbot \
-  --email admin@${DOMAIN} --agree-tos --no-eff-email \
+  --email admin@${DOMAIN} --agree-tos --no-eff-email --non-interactive \
   -d ${DOMAIN} -d www.${DOMAIN}
 
 # Reload Nginx to use new certificates

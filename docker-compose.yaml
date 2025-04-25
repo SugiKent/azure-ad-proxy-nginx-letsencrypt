@@ -12,7 +12,7 @@ services:
       - OAUTH2_PROXY_CLIENT_ID=${CLIENT_ID}
       - OAUTH2_PROXY_CLIENT_SECRET=${CLIENT_SECRET}
       - OAUTH2_PROXY_AZURE_TENANT=${AZURE_TENANT}
-      
+
       # OAuth2 Proxy基本設定
       - OAUTH2_PROXY_COOKIE_SECRET=${COOKIE_SECRET}
       - OAUTH2_PROXY_COOKIE_DOMAIN=${DOMAIN}
@@ -23,7 +23,7 @@ services:
       # 認証設定
       - OAUTH2_PROXY_EMAIL_DOMAINS=*
       - OAUTH2_PROXY_SCOPE=openid profile email
-      
+
       # Nginxとの連携設定
       - OAUTH2_PROXY_REVERSE_PROXY=true
       - OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER=true
@@ -51,8 +51,20 @@ services:
       - NGINX_HOST=${DOMAIN}
       - BACKEND_HOST=${BACKEND_HOST}
       - BACKEND_PORT=${BACKEND_PORT}
-      - AUTH_SKIP_PATHS=${AUTH_SKIP_PATHS}
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+      - AUTH_SKIP_PATHS=${AUTH_SKIP_PATHS:-/public|/static|/healthcheck}
+    command: >
+      /bin/sh -c "
+      envsubst '$${NGINX_HOST} $${BACKEND_HOST} $${BACKEND_PORT} $${AUTH_SKIP_PATHS}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf &&
+      mkdir -p /var/www/certbot/.well-known/acme-challenge &&
+      if [ ! -f /etc/letsencrypt/live/$${NGINX_HOST}/fullchain.pem ]; then
+        mkdir -p /etc/letsencrypt/live/$${NGINX_HOST} &&
+        openssl req -x509 -nodes -newkey rsa:4096 -days 1 \
+          -keyout /etc/letsencrypt/live/$${NGINX_HOST}/privkey.pem \
+          -out /etc/letsencrypt/live/$${NGINX_HOST}/fullchain.pem \
+          -subj '/CN=$${NGINX_HOST}' 2>/dev/null
+      fi &&
+      while :; do sleep 6h & wait $${!}; nginx -s reload; done &
+      nginx -g 'daemon off;'"
     depends_on:
       - oauth2-proxy
     networks:
@@ -67,7 +79,23 @@ services:
     volumes:
       - ./data/certbot/conf:/etc/letsencrypt
       - ./data/certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+    entrypoint: >
+      /bin/sh -c "
+      trap exit TERM;
+      sleep 10;
+      if [ ! -f /etc/letsencrypt/live/${DOMAIN}/cert.pem ] || [ ! -f /etc/letsencrypt/renewal/${DOMAIN}.conf ]; then
+        echo 'Requesting initial certificate for ${DOMAIN}...';
+        certbot certonly --webroot --webroot-path=/var/www/certbot \
+          --email admin@${DOMAIN} --agree-tos --no-eff-email --non-interactive \
+          -d ${DOMAIN} || true;
+      fi;
+      while :; do
+        echo 'Starting certificate renewal check...';
+        certbot renew --non-interactive;
+        sleep 12h & wait $${!};
+      done"
+    depends_on:
+      - nginx
     networks:
       - auth-network
 
@@ -76,20 +104,3 @@ networks:
     driver: bridge
   backend:
     external: ${USE_EXTERNAL_NETWORK:-true}
-
-# Documentation on how to set up the Azure AD application and permissions
-# 1. Register the Application
-#    - Access the Azure portal (https://portal.azure.com/)
-#    - Navigate to Azure Active Directory > App registrations > New registration
-#    - Enter a name for your application
-#    - Select the supported account types
-#    - In the Redirect URI section, create a new web platform entry (e.g., https://your-domain.com/oauth2/callback)
-# 2. Configure API Permissions
-#    - Go to the API Permissions page and click Add a permission
-#    - Select Microsoft Graph > Application permissions > Group > Group.Read.All
-#    - Click Add permissions and, if necessary, grant admin consent
-# 3. Create a Client Secret
-#    - Go to the Certificates & secrets page and add a new client secret
-#    - Note down the value of the client secret
-# 4. Configure Endpoints as Needed
-#    - If using the v2.0 endpoint, set "accessTokenAcceptedVersion": 2 in the Manifest page
